@@ -20,6 +20,19 @@ services:
       - waha_data:/app/.sessions
       - ./waha_patches/Utils.js:/app/node_modules/whatsapp-web.js/src/util/Injected/Utils.js:ro
 
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
   functions:
     environment:
       # ── BuildStart.io edge function secrets ──────────────────────────────────
@@ -27,10 +40,13 @@ services:
       BOT_API_KEY: ${BOT_API_KEY}
       WAHA_BASE_URL: ${WAHA_BASE_URL:-http://waha:3000}
       WAHA_API_KEY: ${WAHA_API_KEY:-buildstart_waha_local_secret_12345}
-      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-      WEBHOOK_URL_OVERRIDE: "http://supabase-envoy:8000/functions/v1/webhook-wsender-Glowix_cosmetics"
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://localhost:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
+      WEBHOOK_URL_OVERRIDE: "http://supabase-envoy:8000/functions/v1/webhook-wsender-Glowix_books"
 
 volumes:
   waha_data:
+  minio_data:

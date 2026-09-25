@@ -58,11 +58,11 @@ interface SendWaybillModalProps {
   preSelectedOrderId?: string | null;
 }
 
-const DEFAULT_TEMPLATE = `✨ *GLOWIX COSMETICS - ORDER DISPATCHED* 🚚
+const DEFAULT_TEMPLATE = `✨ *GLOWIX BOOKS - ORDER DISPATCHED* 🚚
 
 Dear {customer_name},
 
-Ungaloda Glowix Cosmetics order confirm aagi courier la dispatch panniyachu! 📦✨
+Ungaloda Glowix Books order confirm aagi courier la dispatch panniyachu! 📦✨
 
 🚚 *Waybill / Tracking No:* {waybill_number}
 🔖 *Order ID:* #{order_id}
@@ -70,7 +70,7 @@ Ungaloda Glowix Cosmetics order confirm aagi courier la dispatch panniyachu! �
 
 Ungaloda package 2-3 business days kulla ungalukku deliver aagidum. Courier rider delivery ku call pannuvanga, please stay reachable.
 
-Thank you for choosing Glowix Cosmetics! 💖`;
+Thank you for choosing Glowix Books! 💖`;
 
 function formatWhatsAppNumber(phone: string): string {
   let digits = String(phone).replace(/\D/g, "");
@@ -229,7 +229,7 @@ export default function SendWaybillModal({
 
         try {
           const res = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-whatsapp-Glowix_cosmetics`,
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-whatsapp-Glowix_books`,
             {
               method: "POST",
               headers: {

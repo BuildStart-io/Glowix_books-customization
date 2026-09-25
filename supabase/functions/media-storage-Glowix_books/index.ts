@@ -10,6 +10,7 @@ const corsHeaders = {
 };
 
 const ENDPOINT = (Deno.env.get("MINIO_ENDPOINT") || "").replace(/\/+$/, "");
+const PUBLIC_ENDPOINT = (Deno.env.get("MINIO_PUBLIC_ENDPOINT") || ENDPOINT).replace(/\/+$/, "");
 const REGION = Deno.env.get("MINIO_REGION") || "us-east-1";
 
 const aws = new AwsClient({
@@ -54,7 +55,7 @@ async function ensureBucket(bucket: string) {
     Statement: [
       {
         Effect: "Allow",
-        Principal: { AWS: ["*"] },
+        Principal: "*",
         Action: ["s3:GetObject"],
         Resource: [`arn:aws:s3:::${bucket}/*`],
       },
@@ -76,12 +77,12 @@ async function resolveOwner(req: Request): Promise<{ ownerId: string; userId: st
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
 
-  const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: 'glowix_cosmetics' } });
+  const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: 'glowix_books' } });
   const { data, error } = await authClient.auth.getClaims(token);
   const userId = (data as any)?.claims?.sub;
   if (error || !userId) return null;
 
-  const admin = createClient(SUPABASE_URL, SERVICE_KEY, { db: { schema: 'glowix_cosmetics' } });
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY, { db: { schema: 'glowix_books' } });
   const { data: staff } = await admin
     .from("staff_accounts")
     .select("owner_id")
@@ -138,21 +139,30 @@ serve(async (req) => {
         return json({ error: `Upload failed (${put.status})`, details: text.slice(0, 300) }, put.status);
       }
 
-      const publicUrl = `${ENDPOINT}/${bucket}/${key}`;
+      const publicUrl = `${PUBLIC_ENDPOINT}/${bucket}/${key}`;
       console.log(`Uploaded ${publicUrl} (${body.length} bytes)`);
       return json({ url: publicUrl, key, bucket });
     }
 
     if (action === "delete") {
       const { url: fileUrl } = await req.json();
-      const owning = typeof fileUrl === "string"
-        ? ownedBuckets.find((b) => fileUrl.startsWith(`${ENDPOINT}/${b}/`))
-        : undefined;
-      if (!owning) {
+      const prefixPublic = `${PUBLIC_ENDPOINT}/`;
+      const prefixInternal = `${ENDPOINT}/`;
+      let rel = "";
+      if (typeof fileUrl === "string") {
+        if (fileUrl.startsWith(prefixPublic)) {
+          rel = fileUrl.slice(prefixPublic.length);
+        } else if (fileUrl.startsWith(prefixInternal)) {
+          rel = fileUrl.slice(prefixInternal.length);
+        }
+      }
+      const parts = rel.split("/");
+      const bucket = parts[0];
+      const key = parts.slice(1).join("/");
+      if (!bucket || !key || !ownedBuckets.includes(bucket)) {
         return json({ error: "Invalid or forbidden file URL" }, 400);
       }
-      const key = fileUrl.slice(`${ENDPOINT}/${owning}/`.length);
-      const del = await aws.fetch(`${ENDPOINT}/${owning}/${key}`, { method: "DELETE" });
+      const del = await aws.fetch(`${ENDPOINT}/${bucket}/${key}`, { method: "DELETE" });
       if (!del.ok && del.status !== 404) {
         return json({ error: `Delete failed (${del.status})` }, del.status);
       }

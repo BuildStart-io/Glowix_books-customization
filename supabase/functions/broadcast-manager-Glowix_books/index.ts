@@ -73,7 +73,13 @@ async function sendWhatsAppViaWaha(chatId: string, message: string, mediaUrl?: s
   if (url) {
     try {
       const fileName = filenameFromUrl(url);
-      const file = { url, filename: fileName };
+      let wahaFileUrl = url;
+      if (wahaFileUrl.startsWith("http://localhost:9000/")) {
+        wahaFileUrl = wahaFileUrl.replace("http://localhost:9000/", "http://minio:9000/");
+      } else if (wahaFileUrl.startsWith("http://127.0.0.1:9000/")) {
+        wahaFileUrl = wahaFileUrl.replace("http://127.0.0.1:9000/", "http://minio:9000/");
+      }
+      const file = { url: wahaFileUrl, filename: fileName };
       const caption = message || "";
 
       let endpoint = "/api/sendImage";
@@ -234,7 +240,7 @@ serve(async (req) => {
 
   try {
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-      db: { schema: "glowix_cosmetics" },
+      db: { schema: "glowix_books" },
     });
 
     // Authenticate user

@@ -28,7 +28,7 @@ Lovable-hosted version, so reply quality is unchanged.
 ## Layout
 
 ```
-db/01_schema.sql        full public schema: tables, enums, RLS, GRANTs, functions, triggers
+db/01_schema.sql        full Glowix_books schema: tables, enums, RLS, GRANTs, functions, triggers
 db/02_seed.sql          plan limits + first-admin template (no tenant data — clean start)
 db/03_cron.sql          pg_cron jobs (queue drainer, follow-ups)
 supabase/functions/     all 12 edge functions (ai-generate is NOT here — it lives on Lovable)

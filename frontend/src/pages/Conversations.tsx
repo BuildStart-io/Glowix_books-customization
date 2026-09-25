@@ -263,7 +263,7 @@ export default function Conversations() {
       .channel("conversations-realtime")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "glowix_cosmetics", table: "conversations" },
+        { event: "INSERT", schema: "glowix_books", table: "conversations" },
         (payload) => {
           const newMsg = payload.new as Message;
 
@@ -329,7 +329,7 @@ export default function Conversations() {
       if (sessionError) throw sessionError;
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-whatsapp-Glowix_cosmetics`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-whatsapp-Glowix_books`,
         {
           method: "POST",
           headers: {

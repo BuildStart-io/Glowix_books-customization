@@ -13,7 +13,7 @@ serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const supabase = createClient(supabaseUrl, supabaseServiceKey, { db: { schema: 'glowix_cosmetics' } });
+  const supabase = createClient(supabaseUrl, supabaseServiceKey, { db: { schema: 'glowix_books' } });
 
   let triggerSource = "cron";
   let triggerCorrelationId = "";
@@ -254,7 +254,7 @@ async function processMessage(
 
   let aiResponse: Response;
   try {
-    aiResponse = await fetch(`${supabaseUrl}/functions/v1/ai-chat-Glowix_cosmetics`, {
+    aiResponse = await fetch(`${supabaseUrl}/functions/v1/ai-chat-Glowix_books`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${supabaseServiceKey}`,
@@ -453,7 +453,7 @@ async function sendWhatsApp(
   const body: any = { to, message, sessionApiKey };
   if (imageUrl) body.imageUrl = imageUrl;
 
-  const res = await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-Glowix_cosmetics`, {
+  const res = await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-Glowix_books`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${supabaseServiceKey}`,
@@ -478,7 +478,7 @@ async function sendWhatsAppMedia(
   mediaUrl: string,
   sessionApiKey: string
 ) {
-  const res = await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-Glowix_cosmetics`, {
+  const res = await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-Glowix_books`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${supabaseServiceKey}`,
@@ -652,7 +652,7 @@ async function maybeNotifyQualifiedLead(
       sendApiKey = sessionData?.session_api_key || null;
     }
 
-    const res = await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-Glowix_cosmetics`, {
+    const res = await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-Glowix_books`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${supabaseServiceKey}`,

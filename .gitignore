@@ -14,7 +14,9 @@ docker/volumes/db/data/
 docker/volumes/storage/
 docker/volumes/snippets/
 docker/volumes/waha/
+docker/volumes/minio/
 docker/volumes/*/data/
+minio_data/
 
 # Node dependencies & builds
 node_modules/

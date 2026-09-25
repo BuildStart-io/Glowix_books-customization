@@ -118,7 +118,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey, { db: { schema: 'glowix_cosmetics' } });
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, { db: { schema: 'glowix_books' } });
 
     // Identify the calling user from the JWT (token already verified by gateway = false; we self-check)
     const authHeader = req.headers.get("authorization") || "";
@@ -128,7 +128,7 @@ serve(async (req) => {
     }
     const authClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
-      db: { schema: 'glowix_cosmetics' },
+      db: { schema: 'glowix_books' },
     });
     const { data: claimsData, error: claimsError } = await authClient.auth.getClaims(token);
     if (claimsError || !claimsData?.claims?.sub) {
@@ -142,10 +142,10 @@ serve(async (req) => {
     // WAHA session name locked to the user — slug-safe, deterministic, fits within ~25 chars.
     const sessionName = `u_${userId.replace(/-/g, "").substring(0, 20)}`;
     let override = Deno.env.get("WEBHOOK_URL_OVERRIDE");
-    if (override && !override.includes("-Glowix_cosmetics")) {
-      override = override.replace("webhook-wsender", "webhook-wsender-Glowix_cosmetics");
+    if (override && !override.includes("-Glowix_books")) {
+      override = override.replace(/webhook-wsender(-[A-Za-z0-9_]+)?/, "webhook-wsender-Glowix_books");
     }
-    const webhookUrl = override || `${supabaseUrl}/functions/v1/webhook-wsender-Glowix_cosmetics`;
+    const webhookUrl = override || `${supabaseUrl}/functions/v1/webhook-wsender-Glowix_books`;
 
     // Helper: store/update mapping in user_wsender_sessions
     const upsertMapping = async (displayName?: string) => {

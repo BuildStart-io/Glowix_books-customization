@@ -27,7 +27,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey, { db: { schema: 'glowix_cosmetics' } });
+    const supabase = createClient(supabaseUrl, supabaseServiceKey, { db: { schema: 'glowix_books' } });
 
     const { message, phoneNumber, conversationHistory, userId, sessionApiKey, senderName } = await req.json();
 
@@ -646,7 +646,7 @@ CUSTOM SALES FUNNEL & WORKFLOW RULES:
                     sendApiKey = sessionData?.session_api_key || null;
                   }
 
-                  await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-Glowix_cosmetics`, {
+                  await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-Glowix_books`, {
                     method: "POST",
                     headers: {
                       Authorization: `Bearer ${supabaseServiceKey}`,
@@ -754,7 +754,7 @@ CUSTOM SALES FUNNEL & WORKFLOW RULES:
                       sendApiKey = sessionData?.session_api_key || null;
                     }
 
-                    await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-Glowix_cosmetics`, {
+                    await fetch(`${supabaseUrl}/functions/v1/send-whatsapp-Glowix_books`, {
                       method: "POST",
                       headers: {
                         Authorization: `Bearer ${supabaseServiceKey}`,

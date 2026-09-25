@@ -81,7 +81,13 @@ serve(async (req) => {
 
     if (url) {
       const fileName = filenameFromUrl(url);
-      const file = { url, filename: fileName, mimetype: undefined as string | undefined };
+      let wahaFileUrl = url;
+      if (wahaFileUrl.startsWith("http://localhost:9000/")) {
+        wahaFileUrl = wahaFileUrl.replace("http://localhost:9000/", "http://minio:9000/");
+      } else if (wahaFileUrl.startsWith("http://127.0.0.1:9000/")) {
+        wahaFileUrl = wahaFileUrl.replace("http://127.0.0.1:9000/", "http://minio:9000/");
+      }
+      const file = { url: wahaFileUrl, filename: fileName, mimetype: undefined as string | undefined };
       const caption = message || "";
 
       try {
