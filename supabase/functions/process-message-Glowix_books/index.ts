@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { transcribeAudio } from "./transcribe.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -148,28 +149,51 @@ async function processMessage(
   timings: Record<string, number>,
   mark: (label: string) => void
 ) {
-  const { user_id: userId, phone_number: phoneNumber, sender_name: senderName, message_text: messageText, message_type: messageType, session_api_key: sessionApiKey, raw_payload: body } = msg;
+  let { user_id: userId, phone_number: phoneNumber, sender_name: senderName, message_text: messageText, message_type: messageType, session_api_key: sessionApiKey, raw_payload: body, wsender_message_id: wahaMessageId } = msg;
+
+  let isVoice = false;
+  if (messageType === "ptt" || messageType === "audio") {
+    isVoice = true;
+  }
 
   // Check if this is a media message — if so, store it but do NOT reply
-  const mediaTypes = ["image", "video", "audio", "document", "sticker", "ptt", "vcard", "location"];
-  const isMediaMessage = mediaTypes.includes(messageType) || 
-    (!messageText && messageType !== "text") ||
-    (body?.data?.messages?.messageBody === undefined && body?.data?.messages?.message?.conversation === undefined && !messageText);
+  const mediaTypes = ["image", "video", "document", "sticker", "vcard", "location"];
+  let isMediaMessage = mediaTypes.includes(messageType) || 
+    (!messageText && messageType !== "text" && !isVoice) ||
+    (body?.data?.messages?.messageBody === undefined && body?.data?.messages?.message?.conversation === undefined && !isVoice && !messageText);
 
   // 1. Store the incoming message in conversations
   mark("store_inbound_start");
-  const { error: insertError } = await supabase.from("conversations").insert({
+  const { data: inboundMsg, error: insertError } = await supabase.from("conversations").insert({
     phone_number: phoneNumber,
-    message: messageText,
+    message: isVoice ? "🎤 [Voice Note: Transcribing...]" : messageText,
     direction: "inbound",
     message_type: messageType,
-    metadata: { senderName, event: body?.event, raw: body, correlationId: corrId },
+    metadata: { senderName, event: body?.event, raw: body, correlationId: corrId, is_voice: isVoice },
     user_id: userId,
-  });
+  }).select('id').single();
   mark("store_inbound_end");
 
   if (insertError) {
     console.error(`[${corrId}] Error storing message:`, insertError);
+  }
+
+  if (isVoice) {
+    console.log(`[${corrId}] Detected voice message, attempting transcription...`);
+    const mediaUrl = body?.payload?.media?.url || body?.media?.url;
+    const transcription = await transcribeAudio(sessionApiKey, wahaMessageId, mediaUrl);
+    if (transcription) {
+      messageText = transcription;
+      if (inboundMsg?.id) {
+        await supabase.from("conversations").update({
+          message: transcription,
+          metadata: { senderName, event: body?.event, raw: body, correlationId: corrId, is_voice: true, transcription_provider: "gemini" }
+        }).eq('id', inboundMsg.id);
+      }
+    } else {
+      console.log(`[${corrId}] Transcription failed or returned empty`);
+      messageText = "I couldn't hear that clearly. Could you please resend it or type it out for me?";
+    }
   }
 
   // 1b. Contact billing: register this contact for the current cycle.
