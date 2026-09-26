@@ -477,6 +477,7 @@ CREATE TABLE Glowix_books.orders (
     secondary_phone text,
     waybill_number text,
     waybill_updated_at timestamp with time zone,
+    waybill_sent_at timestamp with time zone,
     CONSTRAINT orders_payment_method_check CHECK ((payment_method = ANY (ARRAY['cod'::text, 'bank_transfer'::text]))),
     CONSTRAINT orders_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'processing'::text, 'shipped'::text, 'delivered'::text, 'cancelled'::text])))
 );
@@ -2148,18 +2149,29 @@ GRANT ALL ON TABLE Glowix_books.user_wsender_sessions TO service_role;
 CREATE TABLE IF NOT EXISTS Glowix_books.broadcast_campaigns (
     id uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
     user_id uuid NOT NULL,
+    name text DEFAULT 'Promotional Broadcast'::text NOT NULL,
     title text DEFAULT 'Promotional Broadcast'::text NOT NULL,
-    message text NOT NULL,
-    media_url text,
+    segment text DEFAULT 'all'::text NOT NULL,
     audience_filter text DEFAULT 'all'::text NOT NULL,
+    message text,
+    message_template text,
+    media_url text,
+    media_type text,
+    total_recipients integer DEFAULT 0 NOT NULL,
     total_count integer DEFAULT 0 NOT NULL,
     sent_count integer DEFAULT 0 NOT NULL,
     failed_count integer DEFAULT 0 NOT NULL,
     status text DEFAULT 'draft'::text NOT NULL,
     delay_seconds integer DEFAULT 10 NOT NULL,
+    delay_seconds_min integer DEFAULT 8 NOT NULL,
+    delay_seconds_max integer DEFAULT 15 NOT NULL,
+    batch_size integer DEFAULT 30 NOT NULL,
+    batch_cooldown_seconds integer DEFAULT 120 NOT NULL,
+    started_at timestamp with time zone,
+    completed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT broadcast_campaigns_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'in_progress'::text, 'completed'::text, 'paused'::text, 'failed'::text])))
+    CONSTRAINT broadcast_campaigns_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'sending'::text, 'in_progress'::text, 'completed'::text, 'paused'::text, 'cancelled'::text, 'failed'::text])))
 );
 
 CREATE TABLE IF NOT EXISTS Glowix_books.broadcast_queue (
@@ -2168,8 +2180,10 @@ CREATE TABLE IF NOT EXISTS Glowix_books.broadcast_queue (
     user_id uuid NOT NULL,
     phone_number text NOT NULL,
     customer_name text,
+    recipient_name text,
     status text DEFAULT 'pending'::text NOT NULL,
     error_message text,
+    retry_count integer DEFAULT 0 NOT NULL,
     sent_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT broadcast_queue_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'sending'::text, 'sent'::text, 'failed'::text])))

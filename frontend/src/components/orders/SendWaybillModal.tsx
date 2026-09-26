@@ -251,7 +251,7 @@ export default function SendWaybillModal({
 
           // 2. Mark order as waybill_sent_at in Database to prevent duplicate sends forever
           const now = new Date().toISOString();
-          await supabase
+          const { error: updateErr } = await supabase
             .from("orders")
             .update({
               waybill_sent_at: now,
@@ -261,6 +261,11 @@ export default function SendWaybillModal({
                 : {}),
             })
             .eq("id", order.id);
+
+          if (updateErr) {
+            console.error(`Failed to update waybill_sent_at:`, updateErr);
+            throw new Error(`WhatsApp sent, but DB update failed: ${updateErr.message}`);
+          }
 
           successCount++;
         } catch (sendErr: any) {

@@ -69,6 +69,17 @@ interface QueueLog {
   error_message: string | null;
 }
 
+async function extractInvokeError(error: any): Promise<string> {
+  if (!error) return "Unknown error";
+  try {
+    if (error.context?.json) {
+      const body = await error.context.json();
+      return body?.error || body?.message || error.message;
+    }
+  } catch (_) {}
+  return error.message;
+}
+
 export default function BroadcastManager() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -278,9 +289,10 @@ export default function BroadcastManager() {
       startDispatchLoop(created.id);
     } catch (err: any) {
       console.error("Start broadcast error:", err);
+      const errMsg = await extractInvokeError(err);
       toast({
         title: "Failed to Start",
-        description: err.message || "Could not launch broadcast.",
+        description: errMsg || "Could not launch broadcast.",
         variant: "destructive",
       });
     } finally {
