@@ -169,6 +169,9 @@ serve(async (req) => {
     const singleProducts = products.filter(p => p.category !== "combo");
     const formatProductLine = (p: any) => {
       let line = `- ${p.name}: LKR ${p.price}`;
+      if (p.description?.trim()) {
+        line += ` | Included Books: ${p.description.trim()}`;
+      }
       if (p.stock_quantity !== null && p.stock_quantity !== undefined) {
         line += p.stock_quantity <= 0 ? " (OUT OF STOCK - 2 Wks Pre-Order)" : ` (${p.stock_quantity} in stock)`;
       }
@@ -333,16 +336,34 @@ CRITICAL SECURITY RULE:
 - Your visible reply must ALWAYS be plain, human-readable text only.
 
 CUSTOM SALES FUNNEL & WORKFLOW RULES:
+STRICT INPUT INTENT MAPPINGS:
+- Category Discovery Stage:
+  * "1", "1️⃣", "one", "first", "combo", "combos", "combo offers", "sets", "bundles" => Customer selected COMBO OFFERS / BOOK BUNDLES.
+  * "2", "2️⃣", "two", "second", "separate", "single", "single books", "individual books" => Customer selected SEPARATE PRODUCTS.
+- Payment Selection Stage:
+  * "1", "1️⃣", "one", "cod", "cash", "cash on delivery" => Customer selected CASH ON DELIVERY (COD). Confirm order immediately with <ORDER_JSON>.
+  * "2", "2️⃣", "two", "bank", "transfer", "bank transfer", "deposit" => Customer selected BANK TRANSFER. Display bank accounts and guide payment.
+
 1. SHORT & SWEET STYLE:
    - Keep messages short: 1 to 2 concise sentences with 1-2 friendly emojis ✨.
 2. CATEGORY SELECTION:
    - When greeting or if customer asks what is available, ask if they want:
      1️⃣ Combo Offers
      2️⃣ Separate Products
+   - Accept either numbers (1 or 2) or words ("combo", "separate").
    - IMPORTANT: Only do category selection at the start of shopping. Once customer has selected a product or is providing delivery details, NEVER ask them to choose category again.
-3. SHOWING PRODUCTS & PHOTOS (DISCOVERY STAGE ONLY):
-   - If customer chooses Combo, show items from COMBO OFFERS CATEGORY with prices, and append their photo tag: <IMAGE_URL>url</IMAGE_URL> at the end of the message so the customer sees the photo of the combo offer!
-   - If customer chooses Separate Products, show items from SEPARATE PRODUCTS CATEGORY with prices, and append their photo tag: <IMAGE_URL>url</IMAGE_URL> at the end of the message!
+3. COMBO OFFERS / BOOK BUNDLES FLOW:
+   - When the customer chooses Combo (types "1", "1️⃣", "combo", "set", or "bundle"):
+     1. Present each combo set with its price and clearly list the included books from its description:
+        ✨ [Combo Name] - LKR [Price]
+        📦 Includes:
+        [Itemized list of books from description]
+     2. ALWAYS conclude with an explicit prompt asking which set they prefer:
+        "Which combo set would you like to choose? (e.g. Set 1 or Set 2) 😊"
+     3. Append combo photos (<IMAGE_URL>url</IMAGE_URL>) at the end of the message so the customer can preview them visually.
+   - When the customer chooses Separate Products (types "2", "2️⃣", "separate", or "single"):
+     1. Show items from SEPARATE PRODUCTS CATEGORY with prices.
+     2. Append their photo tag: <IMAGE_URL>url</IMAGE_URL> at the end of the message!
    - Send each product photo ONLY ONCE during initial discovery.
    - Once a product has been selected, or during checkout/address collection/order summary/confirmation, NEVER attach any photos or <IMAGE_URL> tags!
 4. STOCK AVAILABILITY & PRE-ORDER:
@@ -392,12 +413,14 @@ CUSTOM SALES FUNNEL & WORKFLOW RULES:
      🏠 Address: <address>
 
      Which payment method would you prefer? 💳
-     🔹 Cash on Delivery (COD)
-     🔹 Bank Transfer
+     1️⃣ Cash on Delivery (COD)
+     2️⃣ Bank Transfer
+     (Reply with 1 or 2)
    - NEVER ATTACH ANY PHOTOS OR <IMAGE_URL> TAGS WITH THE ORDER SUMMARY!
 9. ORDER CONFIRMATION & <ORDER_JSON>:
-   - When the customer confirms Cash on Delivery (COD) or confirms Bank Transfer payment:
-     - Confirm the order warmly.
+   - When the customer confirms Cash on Delivery (types "1", "cod", "cash on delivery") or confirms Bank Transfer payment (types "2", "bank transfer"):
+     - If Cash on Delivery (COD / 1): Confirm the order warmly.
+     - If Bank Transfer (2): Provide bank details and guide payment.
      - NEVER ATTACH ANY PHOTOS OR <IMAGE_URL> TAGS WITH THE CONFIRMATION!
      - You MUST append the <ORDER_JSON>...</ORDER_JSON> block at the very end of your response!
      - In <ORDER_JSON>:
@@ -922,9 +945,25 @@ CUSTOM SALES FUNNEL & WORKFLOW RULES:
         .toLowerCase();
 
       // Smart safety net: ONLY attach photos during product discovery/inquiry if not previously sent
-      const isDiscoveryInquiry =
+      const isComboSelection =
+        lowerIncoming === "1" ||
+        lowerIncoming === "1️⃣" ||
+        lowerIncoming === "one" ||
         lowerIncoming.includes("combo") ||
         lowerClean.includes("combo") ||
+        lowerIncoming.includes("bundle") ||
+        lowerIncoming.includes("set");
+
+      const isSingleSelection =
+        lowerIncoming === "2" ||
+        lowerIncoming === "2️⃣" ||
+        lowerIncoming === "two" ||
+        lowerIncoming.includes("separate") ||
+        lowerIncoming.includes("single");
+
+      const isDiscoveryInquiry =
+        isComboSelection ||
+        isSingleSelection ||
         lowerIncoming.includes("product") ||
         lowerIncoming.includes("offer") ||
         isExplicitPhotoRequest;
@@ -934,13 +973,14 @@ CUSTOM SALES FUNNEL & WORKFLOW RULES:
         if (p.images && Array.isArray(p.images) && p.images.length > 0) {
           const firstImg = p.images[0];
           const isMentioned = lowerClean.includes(pName);
-          const isTargetedCombo = (lowerIncoming.includes("combo") || lowerClean.includes("combo")) && p.category === "combo";
+          const isTargetedCombo = isComboSelection && p.category === "combo";
+          const isTargetedSingle = isSingleSelection && p.category !== "combo";
           const alreadyIntroduced = assistantHistoryText.includes(pName);
           const alreadyDispatched = alreadySentImages.has(firstImg);
 
           // Only auto-attach if explicitly requested, or if discovering for the FIRST TIME
           if (
-            (isMentioned || isTargetedCombo) &&
+            (isMentioned || isTargetedCombo || isTargetedSingle) &&
             !imageUrls.includes(firstImg) &&
             (isExplicitPhotoRequest || (!alreadyDispatched && !alreadyIntroduced && isDiscoveryInquiry))
           ) {

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useStaffAccess } from "@/hooks/useStaffAccess";
@@ -21,10 +21,12 @@ import {
   HandMetal,
   Trash2,
   Crosshair,
+  Package,
+  ShoppingBag,
 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface Message {
@@ -50,6 +52,19 @@ interface TrackedPhone {
   faq_questions: string[];
 }
 
+interface CustomerOrderSummary {
+  id: string;
+  customer_name: string;
+  customer_phone: string;
+  whatsapp_phone: string | null;
+  status: string;
+  total_amount: number;
+  is_preorder: boolean;
+  payment_method: string;
+  order_items: any;
+  created_at: string;
+}
+
 export default function Conversations() {
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -62,11 +77,14 @@ export default function Conversations() {
   const [takenOverChats, setTakenOverChats] = useState<Set<string>>(new Set());
   const [togglingTakeover, setTogglingTakeover] = useState(false);
   const [trackedPhones, setTrackedPhones] = useState<Map<string, string[]>>(new Map());
+  const [ordersMap, setOrdersMap] = useState<Map<string, CustomerOrderSummary>>(new Map());
+  const [chatFilter, setChatFilter] = useState<"all" | "orders" | "queries">("all");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const { effectiveUserId } = useStaffAccess();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   // Fetch tracked FAQ usage phones
   const fetchTrackedPhones = useCallback(async () => {
@@ -121,10 +139,76 @@ export default function Conversations() {
     }
   }, [user]);
 
+  const normalizePhone = (phone: string | null | undefined): string => {
+    if (!phone) return "";
+    return String(phone).replace(/\D/g, "");
+  };
+
+  const getOrderForPhone = useCallback((phone: string): CustomerOrderSummary | undefined => {
+    const clean = normalizePhone(phone);
+    return ordersMap.get(clean) || ordersMap.get(phone);
+  }, [ordersMap]);
+
+  // Fetch all recent customer orders
+  const fetchOrders = useCallback(async () => {
+    if (!user) return;
+    const ownerId = effectiveUserId || user.id;
+    try {
+      const { data, error } = await supabase
+        .from("orders")
+        .select("id, customer_name, customer_phone, whatsapp_phone, status, total_amount, is_preorder, payment_method, order_items, created_at")
+        .eq("user_id", ownerId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const map = new Map<string, CustomerOrderSummary>();
+      for (const order of data || []) {
+        const cleanCustomerPhone = normalizePhone(order.customer_phone);
+        const cleanWhatsappPhone = normalizePhone(order.whatsapp_phone);
+
+        if (cleanWhatsappPhone && !map.has(cleanWhatsappPhone)) {
+          map.set(cleanWhatsappPhone, order as CustomerOrderSummary);
+        }
+        if (cleanCustomerPhone && !map.has(cleanCustomerPhone)) {
+          map.set(cleanCustomerPhone, order as CustomerOrderSummary);
+        }
+        if (order.whatsapp_phone && !map.has(order.whatsapp_phone)) {
+          map.set(order.whatsapp_phone, order as CustomerOrderSummary);
+        }
+        if (order.customer_phone && !map.has(order.customer_phone)) {
+          map.set(order.customer_phone, order as CustomerOrderSummary);
+        }
+      }
+      setOrdersMap(map);
+    } catch (err) {
+      console.error("Error fetching customer orders for conversations:", err);
+    }
+  }, [user, effectiveUserId]);
+
   useEffect(() => {
     fetchTakeovers();
     fetchTrackedPhones();
-  }, [fetchTakeovers, fetchTrackedPhones]);
+    fetchOrders();
+  }, [fetchTakeovers, fetchTrackedPhones, fetchOrders]);
+
+  // Realtime subscription for orders
+  useEffect(() => {
+    const orderChannel = supabase
+      .channel("conversations-orders-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "glowix_books", table: "orders" },
+        () => {
+          fetchOrders();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(orderChannel);
+    };
+  }, [fetchOrders]);
 
   const toggleTakeover = useCallback(async (phoneNumber: string) => {
     if (!user || togglingTakeover) return;
@@ -394,11 +478,23 @@ export default function Conversations() {
     return date.toLocaleDateString([], { month: "short", day: "numeric" });
   };
 
-  const filteredThreads = threads.filter(
-    (t) =>
+  const orderThreadCount = useMemo(() => {
+    return threads.filter((t) => Boolean(getOrderForPhone(t.phone_number))).length;
+  }, [threads, getOrderForPhone]);
+
+  const queryThreadCount = Math.max(0, threads.length - orderThreadCount);
+
+  const filteredThreads = threads.filter((t) => {
+    const matchesSearch =
       t.phone_number.includes(searchQuery) ||
-      t.sender_name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+      t.sender_name.toLowerCase().includes(searchQuery.toLowerCase());
+    if (!matchesSearch) return false;
+
+    const hasOrder = Boolean(getOrderForPhone(t.phone_number));
+    if (chatFilter === "orders") return hasOrder;
+    if (chatFilter === "queries") return !hasOrder;
+    return true;
+  });
 
   return (
     <DashboardLayout>
@@ -418,7 +514,7 @@ export default function Conversations() {
               selectedPhone ? "hidden md:flex" : "flex"
             )}
           >
-            <div className="p-3 border-b">
+            <div className="p-3 border-b space-y-2.5">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -427,6 +523,46 @@ export default function Conversations() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9"
                 />
+              </div>
+              <div className="flex items-center gap-1 p-0.5 bg-muted/60 rounded-lg text-xs">
+                <button
+                  type="button"
+                  onClick={() => setChatFilter("all")}
+                  className={cn(
+                    "flex-1 py-1.5 px-2 rounded-md font-medium transition-all text-center",
+                    chatFilter === "all"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  All ({threads.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChatFilter("orders")}
+                  className={cn(
+                    "flex-1 py-1.5 px-2 rounded-md font-medium transition-all text-center flex items-center justify-center gap-1",
+                    chatFilter === "orders"
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "text-muted-foreground hover:text-emerald-600"
+                  )}
+                >
+                  <Package className="h-3 w-3" />
+                  Orders ({orderThreadCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChatFilter("queries")}
+                  className={cn(
+                    "flex-1 py-1.5 px-2 rounded-md font-medium transition-all text-center flex items-center justify-center gap-1",
+                    chatFilter === "queries"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <MessageSquare className="h-3 w-3" />
+                  Queries ({queryThreadCount})
+                </button>
               </div>
             </div>
             <ScrollArea className="flex-1">
@@ -446,6 +582,8 @@ export default function Conversations() {
                   {filteredThreads.map((thread) => {
                     const isTracked = trackedPhones.has(thread.phone_number);
                     const trackedFaqs = trackedPhones.get(thread.phone_number) || [];
+                    const order = getOrderForPhone(thread.phone_number);
+                    const hasOrder = Boolean(order);
                     
                     return (
                       <button
@@ -454,16 +592,25 @@ export default function Conversations() {
                         className={cn(
                           "w-full text-left px-4 py-3 border-b hover:bg-muted/50 transition-colors",
                           selectedPhone === thread.phone_number && "bg-muted",
-                          isTracked && "border-l-4 border-l-primary bg-primary/5"
+                          hasOrder && "border-l-4 border-l-emerald-500 bg-emerald-50/25 dark:bg-emerald-950/15",
+                          isTracked && !hasOrder && "border-l-4 border-l-primary bg-primary/5"
                         )}
                       >
                         <div className="flex items-start gap-3">
                           <div className="flex flex-col items-center gap-1 flex-shrink-0">
                             <div className={cn(
                               "h-10 w-10 rounded-full flex items-center justify-center",
-                              isTracked ? "bg-primary/20 ring-2 ring-primary" : "bg-primary/10"
+                              hasOrder
+                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 ring-2 ring-emerald-500/50"
+                                : isTracked
+                                ? "bg-primary/20 ring-2 ring-primary text-primary"
+                                : "bg-primary/10 text-primary"
                             )}>
-                              <User className={cn("h-5 w-5", isTracked ? "text-primary" : "text-primary")} />
+                              {hasOrder ? (
+                                <ShoppingBag className="h-5 w-5" />
+                              ) : (
+                                <User className="h-5 w-5" />
+                              )}
                             </div>
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
@@ -492,7 +639,8 @@ export default function Conversations() {
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <p className={cn(
                                   "font-medium text-sm truncate",
-                                  isTracked && "text-primary font-bold"
+                                  hasOrder && "text-emerald-800 dark:text-emerald-300 font-semibold",
+                                  isTracked && !hasOrder && "text-primary font-bold"
                                 )}>
                                   {thread.sender_name}
                                 </p>
@@ -518,10 +666,39 @@ export default function Conversations() {
                                 {formatTime(thread.last_time)}
                               </span>
                             </div>
-                            <p className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Phone className="h-3 w-3" />
-                              {thread.phone_number}
-                            </p>
+                            <div className="flex items-center justify-between gap-1 mt-0.5">
+                              <p className="text-xs text-muted-foreground flex items-center gap-1 truncate">
+                                <Phone className="h-3 w-3 flex-shrink-0" />
+                                {thread.phone_number}
+                              </p>
+                              {hasOrder && order && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] px-1.5 py-0 font-medium border-emerald-500/50 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 flex items-center gap-1 flex-shrink-0"
+                                >
+                                  <Package className="h-2.5 w-2.5" />
+                                  LKR {Number(order.total_amount).toLocaleString()}
+                                </Badge>
+                              )}
+                            </div>
+                            {hasOrder && order && (
+                              <div className="flex items-center gap-1 mt-1">
+                                <span className={cn(
+                                  "text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded",
+                                  order.status === "delivered" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300" :
+                                  order.status === "shipped" ? "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300" :
+                                  order.status === "processing" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" :
+                                  "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                )}>
+                                  {order.status}
+                                </span>
+                                {order.is_preorder && (
+                                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                                    Pre-Order
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             <p className="text-sm text-muted-foreground truncate mt-0.5">
                               {thread.last_message}
                             </p>
@@ -600,6 +777,40 @@ export default function Conversations() {
                     )}
                   </Button>
                 </div>
+
+                {/* Active Customer Order Banner */}
+                {selectedPhone && getOrderForPhone(selectedPhone) && (() => {
+                  const activeOrder = getOrderForPhone(selectedPhone)!;
+                  return (
+                    <div className="bg-emerald-50/90 dark:bg-emerald-950/40 border-b border-emerald-200 dark:border-emerald-800/60 px-4 py-2 flex items-center justify-between gap-2 text-xs flex-wrap">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-semibold">
+                          <Package className="h-3.5 w-3.5" />
+                          <span>Order #{activeOrder.id.substring(0, 8)}</span>
+                        </div>
+                        <span className="text-muted-foreground">•</span>
+                        <span className="font-medium">LKR {Number(activeOrder.total_amount).toLocaleString()}</span>
+                        <span className="text-muted-foreground">•</span>
+                        <span className="capitalize text-muted-foreground">Status: <strong className="text-foreground">{activeOrder.status}</strong></span>
+                        <span className="text-muted-foreground">•</span>
+                        <span className="text-muted-foreground">{activeOrder.payment_method === "cod" ? "Cash on Delivery" : "Bank Transfer"}</span>
+                        {activeOrder.is_preorder && (
+                          <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-400 bg-amber-50 dark:bg-amber-950/30">
+                            Pre-Order
+                          </Badge>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 text-xs border-emerald-500/40 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100/50 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+                        onClick={() => navigate(`/orders?search=${encodeURIComponent(selectedPhone)}`)}
+                      >
+                        View in Orders →
+                      </Button>
+                    </div>
+                  );
+                })()}
 
                 {/* Messages */}
                 <ScrollArea className="flex-1 p-4">
