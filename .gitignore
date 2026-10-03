@@ -44,3 +44,4 @@ Thumbs.db
 .gemini/
 .agents/
 .supabase/
+*.exp
